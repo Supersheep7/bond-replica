@@ -137,13 +137,13 @@ def read_pubinfo(mode):
     """
     if mode == 'train':
         with open(join(os.path.dirname(__file__), "data_train.json"), "r", encoding="utf-8") as f:
-            pubs = json.load(f)[0][1]
+            pubs = json.load(f)['data_train'][1]
     elif mode == 'valid':
-        with open(join(os.path.dirname(__file__), "data_val.json"), "r", encoding="utf-8") as f:
-            pubs = json.load(f)[0][1]
+        with open(join(os.path.dirname(__file__), "data_valid.json"), "r", encoding="utf-8") as f:
+            pubs = json.load(f)['data_valid'][1]
     elif mode == 'test':
         with open(join(os.path.dirname(__file__), "data_test.json"), "r", encoding="utf-8") as f:
-            pubs = json.load(f)[0][1]
+            pubs = json.load(f)['data_test'][1]
     else:
         raise ValueError('choose right mode')
     
@@ -155,13 +155,13 @@ def read_raw_pubs(mode):
     """
     if mode == 'train':
         with open(join(os.path.dirname(__file__), "data_train.json"), "r", encoding="utf-8") as f:
-            raw_pubs = json.load(f)[0][0]
+            raw_pubs = json.load(f)['data_train'][0]
     elif mode == 'valid':
         with open(join(os.path.dirname(__file__), "data_valid.json"), "r", encoding="utf-8") as f:
-            raw_pubs = json.load(f)[0][0]
+            raw_pubs = json.load(f)['data_valid'][0]
     elif mode == 'test':
         with open(join(os.path.dirname(__file__), "data_test.json"), "r", encoding="utf-8") as f:
-            raw_pubs = json.load(f)[0][0]
+            raw_pubs = json.load(f)['data_test'][0]
     else:
         raise ValueError('choose right mode')
     
