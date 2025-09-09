@@ -1,0 +1,1 @@
+This repository is a WIP replication experiment for results from Cheng, Y., Chen, B., Zhang, F., & Tang, J. (2024). BOND: Bootstrapping From-Scratch Name Disambiguation with Multi-task Promoting. Proceedings of the ACM Web Conference 2024, 4216–4226. https://doi.org/10.1145/3589334.3645580 >> https://github.com/THUDM/WhoIsWho/tree/main/bond
