@@ -13,6 +13,31 @@ from os.path import join, dirname
 import os
 import codecs
 import json
+from sklearn.metrics import f1_score
+import matplotlib.pyplot as plt
+
+def pairwise_f1(gt_labels, pred_labels):
+    """Compute pairwise F1 between ground truth and predicted clusters."""
+    n = len(gt_labels)
+    # ignore DBSCAN noise (-1)
+    mask = pred_labels != -1
+    gt = gt_labels[mask]
+    pred = pred_labels[mask]
+
+    if len(gt) == 0:
+        return 0.0
+
+    # pairwise similarity matrices
+    gt_matrix = (gt[:, None] == gt[None, :]).astype(int)
+    pred_matrix = (pred[:, None] == pred[None, :]).astype(int)
+
+    # flatten upper triangle (avoid self-pairs)
+    triu_idx = np.triu_indices_from(gt_matrix, k=1)
+    gt_flat = gt_matrix[triu_idx]
+    pred_flat = pred_matrix[triu_idx]
+
+    return f1_score(gt_flat, pred_flat)
+
 
 def tanimoto(p, q):
     c = [v for v in p if v in q]
@@ -314,45 +339,71 @@ class BONDTrainer:
             
             optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=5e-4)
 
+            cluster_losses, recon_losses, total_losses, f1s = [], [], [], []
+
             for epoch in range(50):
-                # ==== Train ====
-                ''' Get the internal representation of the graph using GNN encoder '''
                 model.train()
                 optimizer.zero_grad()
                 logits, embd = model.encode(ft_list, data.edge_index, data.edge_attr)
-                ''' DBSCAN on the intermediate embeddings & construct Y '''
+
+                # DBSCAN clustering
                 dis = pairwise_distances(embd.cpu().detach().numpy(), metric='cosine')
-                db_label = DBSCAN(eps=0.1, min_samples=5, metric='precomputed').fit_predict(dis) 
-                db_label = torch.from_numpy(db_label)
-                db_label = db_label.to(device) 
-                ''' Get the local label matrix from DBSCAN results '''
-                class_matrix = torch.from_numpy(self.onehot_encoder(db_label))
-                local_label = torch.mm(class_matrix, class_matrix.t())
-                local_label = local_label.float()
-                local_label = local_label.to(device)
-                ''' Get the predicted matrix from C@C.t() '''
+                db_label = DBSCAN(eps=0.1, min_samples=5, metric='precomputed').fit_predict(dis)
+
+                # Labels for loss
+                class_matrix = torch.from_numpy(self.onehot_encoder(db_label)).to(device)
+                local_label = torch.mm(class_matrix, class_matrix.t()).float().to(device)
                 global_label = torch.matmul(logits, logits.t())
-                # =======> FIRST LOSS LOGGED: CLUSTER
+
+                # Losses
                 loss_cluster = F.binary_cross_entropy_with_logits(global_label, local_label)
-                # =======> SECOND LOSS LOGGED: RECONSTRUCTION
                 loss_recon = model.recon_loss(embd, data.edge_index)
-                # =======> TOTAL LOSS LOGGED
-                w_cluster = 0.5
-                w_recon = 1 - w_cluster
-                loss_train = w_cluster * loss_cluster + w_recon * loss_recon
+                loss_train = 0.5 * loss_cluster + 0.5 * loss_recon
+
+                # === Log running losses ===
+                cluster_losses.append(loss_cluster.item())
+                recon_losses.append(loss_recon.item())
+                total_losses.append(loss_train.item())
+
+                # === Running F1 ===
+                gt_labels = label.cpu().numpy()
+                f1 = pairwise_f1(gt_labels, db_label)
+                f1s.append(f1)
                 
-                if (epoch % 5) == 0:
+                if epoch % 5 == 0:
                     print(
-                        'epoch: {:3d}'.format(epoch),
-                        'cluster loss: {:.4f}'.format(loss_cluster.item()),
-                        'recon loss: {:.4f}'.format(loss_recon.item()),
-                        'ALL loss: {:.4f}'.format(loss_train.item())
+                        f'epoch: {epoch:3d} | cluster loss: {loss_cluster.item():.4f} '
+                        f'recon loss: {loss_recon.item():.4f} | total loss: {loss_train.item():.4f} '
+                        f'| F1: {f1:.3f}'
                     )
 
                 loss_train.backward()
                 optimizer.step()
-            
+
+                
+                        
             # ==== Evaluate ====
+            # ================= Plot after training =================
+            plt.figure(figsize=(12,4))
+
+            plt.subplot(1,2,1)
+            plt.plot(cluster_losses, label="Cluster loss")
+            plt.plot(recon_losses, label="Reconstruction loss")
+            plt.plot(total_losses, label="Total loss")
+            plt.xlabel("Epoch")
+            plt.ylabel("Loss")
+            plt.legend()
+            plt.title(f"Loss curves - {name}")
+
+            plt.subplot(1,2,2)
+            plt.plot(f1s, label="Pairwise F1")
+            plt.xlabel("Epoch")
+            plt.ylabel("F1-score")
+            plt.legend()
+            plt.title(f"Clustering F1 vs GT - {name}")
+
+            plt.tight_layout()
+            plt.show()
             with torch.no_grad():
                 model.eval()
                 logits, embd = model.encode(ft_list, data.edge_index, data.edge_attr)
