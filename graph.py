@@ -12,7 +12,7 @@ def save_emb(mode, name, pubs, save_path):
     mapping = dict()
     for idx, pid in enumerate(pubs):
         mapping[idx] = pid
-
+#@
     # load paper embedding
     with open(join(save_path, 'paper_emb', mode, name, 'ptext_emb.pkl'), 'rb') as f:
         ptext_emb = pickle.load(f)
