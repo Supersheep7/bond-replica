@@ -356,13 +356,16 @@ class BONDTrainer:
             with torch.no_grad():
                 model.eval()
                 logits, embd = model.encode(ft_list, data.edge_index, data.edge_attr)
-                gl_label = torch.matmul(logits, logits.t())
-                
+                ''' Get the predicted matrix from C@C.t() '''
+                global_label = torch.matmul(logits, logits.t())
+                ''' Get the pairwise distances in embd space '''
                 lc_dis = pairwise_distances(embd.cpu().detach().numpy(), metric='cosine')
+                ''' Fit a DBSCAN on local distances (from embd)'''
                 local_label = DBSCAN(eps=0.5, min_samples=5, metric='precomputed').fit_predict(lc_dis) 
-                gl_dis = pairwise_distances(gl_label.cpu().detach().numpy(), metric='cosine')
-                gl_label = DBSCAN(eps=0.5, min_samples=5, metric='precomputed').fit_predict(gl_dis) 
-                 
+                ''' Get the pairwise distances in logits space '''
+                gl_dis = pairwise_distances(global_label.cpu().detach().numpy(), metric='cosine')
+                ''' Fit a dbscan on global distances (from logits) '''
+                global_label = DBSCAN(eps=0.5, min_samples=5, metric='precomputed').fit_predict(gl_dis) 
                 pred = []           
                 # change to one-hot form
                 class_matrix = torch.from_numpy(self.onehot_encoder(local_label))
@@ -370,7 +373,6 @@ class BONDTrainer:
                 local_label = torch.mm(class_matrix, class_matrix.t())
                 pred = self.matx2list(local_label)
                 pred = self.post_match(pred, name_pubs, name, datatype)
-
                 # Save results
                 results[name] = pred
 
