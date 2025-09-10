@@ -17,26 +17,29 @@ from sklearn.metrics import f1_score
 import matplotlib.pyplot as plt
 
 def pairwise_f1(gt_labels, pred_labels):
-    """Compute pairwise F1 between ground truth and predicted clusters."""
-    n = len(gt_labels)
-    # ignore DBSCAN noise (-1)
-    mask = pred_labels != -1
-    gt = gt_labels[mask]
-    pred = pred_labels[mask]
+    """
+    Pairwise F1 for SND:
+    - Positive = two papers are the same author (GT).
+    - Pred positive = in the same predicted cluster AND neither label is -1 (noise).
+    """
+    gt = np.asarray(gt_labels)
+    pred = np.asarray(pred_labels)
+    n = len(gt)
 
-    if len(gt) == 0:
-        return 0.0
+    # pairwise GT: same author
+    gt_same = (gt[:, None] == gt[None, :])
 
-    # pairwise similarity matrices
-    gt_matrix = (gt[:, None] == gt[None, :]).astype(int)
-    pred_matrix = (pred[:, None] == pred[None, :]).astype(int)
+    # pairwise prediction: same non-noise cluster
+    same_cluster = (pred[:, None] == pred[None, :])
+    non_noise = (pred[:, None] != -1) & (pred[None, :] != -1)
+    pred_same = same_cluster & non_noise
 
-    # flatten upper triangle (avoid self-pairs)
-    triu_idx = np.triu_indices_from(gt_matrix, k=1)
-    gt_flat = gt_matrix[triu_idx]
-    pred_flat = pred_matrix[triu_idx]
+    tri = np.triu_indices(n, k=1)
+    y_true = gt_same[tri].astype(int)
+    y_pred = pred_same[tri].astype(int)
 
-    return f1_score(gt_flat, pred_flat)
+    # be explicit so we don't get 1.0 when there are no predicted positives
+    return f1_score(y_true, y_pred, zero_division=0)
 
 
 def tanimoto(p, q):
