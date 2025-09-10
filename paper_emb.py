@@ -177,7 +177,6 @@ def dump_paper_emb(model_name, ft_dim):
                     for word in pub["keywords"]:
                         keyword = keyword + word + " "
 
-
                 pstr = pub["title"] + " " + keyword + " " + org
                 pstr = pstr.strip()
                 pstr = pstr.lower()
@@ -187,9 +186,7 @@ def dump_paper_emb(model_name, ft_dim):
                 pstr = [word for word in pstr if len(word) > 2]
                 pstr = [word for word in pstr if word not in stopwords]
                 pstr = [word for word in pstr if word not in stopwords_extend]
-
                 pstr = [word for word in pstr if word not in stopwords_check]
-
 
                 words_vec = []
                 for word in pstr:

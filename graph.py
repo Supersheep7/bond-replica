@@ -5,6 +5,7 @@ from os.path import join
 import json 
 import numpy as np
 import torch
+import pickle
 
 def save_emb(mode, name, pubs, save_path):
     # build mapping of paper & index-id
@@ -13,9 +14,8 @@ def save_emb(mode, name, pubs, save_path):
         mapping[idx] = pid
 
     # load paper embedding
-    ''' TO DO '''
-    ptext_emb = None
-    ''' TO DO '''
+    with open(join(save_path, 'paper_emb', mode, name, 'ptext_emb.pkl'), 'rb') as f:
+        ptext_emb = pickle.load(f)
 
     # init node feature matrix(n * dim_size)
     ft = dict() 
