@@ -16,30 +16,48 @@ import json
 from sklearn.metrics import f1_score
 import matplotlib.pyplot as plt
 
-def pairwise_f1(gt_labels, pred_labels):
+def pairwise_f1(gt_labels, pred_labels, *, return_stats=False):
     """
-    Pairwise F1 for SND:
-    - Positive = two papers are the same author (GT).
-    - Pred positive = in the same predicted cluster AND neither label is -1 (noise).
+    Pairwise F1 for SND.
+    GT positive: same author.
+    Pred positive: same predicted cluster AND neither label is -1 (noise).
+    Pairs with any noise are treated as predicted NEGATIVE.
     """
+    print(gt_labels)
+    print(pred_labels)
     gt = np.asarray(gt_labels)
-    pred = np.asarray(pred_labels)
-    n = len(gt)
+    pr = np.asarray(pred_labels)
+    assert gt.shape == pr.shape and gt.ndim == 1
 
-    # pairwise GT: same author
-    gt_same = (gt[:, None] == gt[None, :])
+    n = gt.shape[0]
+    # upper-triangular pairs (i < j)
+    i, j = np.triu_indices(n, k=1)
 
-    # pairwise prediction: same non-noise cluster
-    same_cluster = (pred[:, None] == pred[None, :])
-    non_noise = (pred[:, None] != -1) & (pred[None, :] != -1)
-    pred_same = same_cluster & non_noise
+    # ground-truth: same author?
+    y_true = (gt[i] == gt[j])
 
-    tri = np.triu_indices(n, k=1)
-    y_true = gt_same[tri].astype(int)
-    y_pred = pred_same[tri].astype(int)
+    # predicted: same non-noise cluster?
+    same = (pr[i] == pr[j])
+    non_noise = (pr[i] != -1) & (pr[j] != -1)
+    y_pred = same & non_noise
 
-    # be explicit so we don't get 1.0 when there are no predicted positives
-    return f1_score(y_true, y_pred, zero_division=0)
+    # counts
+    tp = np.sum(y_true & y_pred)
+    fp = np.sum(~y_true & y_pred)
+    fn = np.sum(y_true & ~y_pred)
+
+    prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    rec  = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1   = 2*prec*rec/(prec+rec) if (prec+rec) > 0 else 0.0
+
+    if return_stats:
+        total_pairs = len(i)
+        pos_rate = y_true.mean()  # how imbalanced the task is
+        return f1, dict(tp=int(tp), fp=int(fp), fn=int(fn),
+                        total_pairs=int(total_pairs), pos_rate=float(pos_rate),
+                        prec=float(prec), rec=float(rec))
+    return f1
+
 
 
 def tanimoto(p, q):
