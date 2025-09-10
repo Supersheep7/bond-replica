@@ -6,15 +6,17 @@ import json
 import numpy as np
 import torch
 import pickle
+import random
+from torch_geometric.data import Data
 
 def save_emb(mode, name, pubs, save_path):
     # build mapping of paper & index-id
     mapping = dict()
     for idx, pid in enumerate(pubs):
         mapping[idx] = pid
-#@
+
     # load paper embedding
-    with open(join(save_path, 'paper_emb', mode, name, 'ptext_emb.pkl'), 'rb') as f:
+    with open(join('paper_emb', mode, name, 'ptext_emb.pkl'), 'rb') as f:
         ptext_emb = pickle.load(f)
 
     # init node feature matrix(n * dim_size)
@@ -26,7 +28,7 @@ def save_emb(mode, name, pubs, save_path):
     feats_file_path = join(save_path, 'feats_p.npy')
     np.save(feats_file_path, ft)
 
-def gen_relations(target):
+def gen_relations(name, mode, target):
     """
     Generates a mapping from paper IDs to related entities (authors, organizations, or venues) based on the specified target.
     Args:
@@ -53,7 +55,7 @@ def gen_relations(target):
     elif target == 'venue':
         filename = "paper_venue.txt"
 
-    dirpath = os.getcwd()
+    dirpath =  join('relations', mode, name)
     with open(join(dirpath, filename), 'r', encoding='utf-8') as f:
         for line in f:
             temp.add(line)
@@ -103,7 +105,7 @@ def save_label_pubs(mode, name, raw_pubs, save_path):
 
     return pubs
 
-def save_graph(pubs, save_path):
+def save_graph(name, pubs, save_path, mode):
 
     """
     Generates and saves graph-based relationships and outlier information for a set of publications.
@@ -125,9 +127,9 @@ def save_graph(pubs, save_path):
 
     cp_a, cp_o = set(), set()   # Outliers
 
-    paper_rel_ath = gen_relations('author')
-    paper_rel_org = gen_relations('org')
-    paper_rel_ven = gen_relations('venue')
+    paper_rel_ath = gen_relations(name, mode, 'author')
+    paper_rel_org = gen_relations(name, mode, 'org')
+    paper_rel_ven = gen_relations(name, mode, 'venue')
 
     for pid in paper_dict:
         if pid not in paper_rel_ath:
@@ -209,13 +211,13 @@ def build_graph():
         print("preprocess dataset: ", mode)
         if mode == "train":
             with open(join(os.path.dirname(__file__), "data_train.json"), "r", encoding="utf-8") as f:
-                raw_pubs = json.load(f)
+                raw_pubs = json.load(f)['data_train'][0]
         elif mode == "valid":
-            with open(join(os.path.dirname(__file__), "data_val.json"), "r", encoding="utf-8") as f:
-                raw_pubs = json.load(f)
+            with open(join(os.path.dirname(__file__), "data_valid.json"), "r", encoding="utf-8") as f:
+                raw_pubs = json.load(f)['data_valid'][0]
         elif mode == "test":
             with open(join(os.path.dirname(__file__), "data_test.json"), "r", encoding="utf-8") as f:
-                raw_pubs = json.load(f)
+                raw_pubs = json.load(f)['data_test'][0]
         
         for name in tqdm(raw_pubs):
             save_path = join('graph', mode, name)
@@ -223,3 +225,132 @@ def build_graph():
             pubs = save_label_pubs(mode, name, raw_pubs, save_path)
             save_graph(name, pubs, save_path, mode)
             save_emb(mode, name, pubs, save_path)
+
+def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0.9):
+    """
+    Args:
+        name(str): author
+        th_a(int): threshold of coA
+        th_o(float): threshold of coO
+        th_v(int): threshold of coV
+    Returns:
+        label(list): true label
+        ft_tensor(tensor): node feature
+        data(Pyg Graph Data): graph
+    """
+    data_path = 'graph'
+    datapath = join(data_path, mode, name)
+
+    # Load label
+    if mode == "train":
+        p_label = np.load(join(datapath, 'p_label.npy'), allow_pickle=True)
+        p_label_list = []
+        for pid in p_label.item():
+            p_label_list.append(p_label.item()[pid])
+        label = torch.LongTensor(p_label_list)
+
+    else:
+        label = []
+    
+    # Load node feature
+    feats = np.load(join(datapath, 'feats_p.npy'), allow_pickle=True)
+    ft_list = []
+    for idx in feats.item():
+        ft_list.append(feats.item()[idx])
+    ft_tensor = torch.stack(ft_list) # size: N * feature dimension
+
+    # Load edge
+    temp = set()
+    with open(join(datapath, 'adj_attr.txt'), 'r', encoding='utf-8') as f:
+        for line in f:
+            temp.add(line)
+
+    srcs, dsts, value, attr = [], [], [], []
+    for line in temp:
+        toks = line.strip().split("\t")
+        if len(toks) == 7:
+            src, dst = int(toks[0]), int(toks[1])
+            val_a, val_o, val_v = int(toks[2]), int(toks[3]), int(toks[5])
+            attr_o, attr_v = float(toks[4]), float(toks[6])
+        else:
+            print('read adj_attr ERROR!\n')
+
+        if rel_on == 'a':
+            if val_a > th_a:
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_a)
+                attr.append(val_a)
+        elif rel_on == 'o':
+            if val_o > th_o:
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_o)
+                attr.append(val_o)
+        elif rel_on == 'v':
+            if val_v > th_v:
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_v)
+                attr.append(val_v)  
+        elif rel_on == 'aov':
+            prob_v = random.random()
+            if (prob_v >= p_v):
+                val_v = val_v
+            else:
+                val_v = 0
+            
+            if attr_o >= th_o:
+                val_o = val_o
+            else:
+                val_o = 0
+
+            if (val_a > th_a) and (val_o > th_o) and (val_v > th_v): #a, o, v
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_a+val_o+val_v)
+                attr.append([float(val_a), float(attr_o), float(attr_v)])
+            elif (val_a > th_a) and (val_o > th_o) and (val_v <= th_v): #a, o
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_a+val_o)
+                attr.append([float(val_a), float(attr_o), 0])
+            elif (val_a > th_a) and (val_o <= th_o) and (val_v > th_v): #a, v
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_a+val_v)
+                attr.append([float(val_a), 0, float(attr_v)])   
+            elif (val_a > th_a) and (val_o <= th_o) and (val_v <= th_v): #a
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_a)
+                attr.append([float(val_a), 0, 0])
+            elif (val_a <= th_a) and (val_o > th_o) and (val_v > th_v): #o, v
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_o+val_v)
+                attr.append([0, float(attr_o), float(attr_v)])
+            elif (val_a <= th_a) and (val_o > th_o) and (val_v <= th_v): #o
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_o)
+                attr.append([0, float(attr_o), 0])
+            elif (val_a <= th_a) and (val_o <= th_o) and (val_v > th_v): #v
+                srcs.append(src)
+                dsts.append(dst)
+                value.append(val_v)
+                attr.append([0, 0, float(attr_v)])
+        
+        else:
+            print('wrong relation set\n')
+            break
+
+    temp.clear()
+
+    # Build graph
+    edge_index = torch.cat([torch.tensor(srcs).unsqueeze(0), torch.tensor(dsts).unsqueeze(0)], dim=0)
+    edge_attr = torch.tensor(attr, dtype=torch.float32)
+    edge_weight = torch.tensor(value, dtype=torch.float32)
+    data = Data(edge_index=edge_index, edge_attr=edge_attr, edge_weight=edge_weight)
+
+    return label, ft_tensor, data

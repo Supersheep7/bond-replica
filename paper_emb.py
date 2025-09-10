@@ -32,7 +32,7 @@ def extract_text_save(pub_files, out_file):
     f_out = open(out_file, 'w', encoding='utf-8')
     for file in pub_files:
         with open(file, 'r', encoding='utf-8') as f:
-            pubs = json.load(f)
+            pubs = json.load(f)[os.path.splitext(os.path.basename(file))[0]][1]
         for pub in tqdm(pubs.values()):
             for author in pub["authors"]:
                 if "org" in author:
@@ -81,12 +81,9 @@ def dump_corpus():
     """
     dump texts for word2vec training.
     """
-    with open(join(os.path.dirname(__file__), "data_train.json"), "r", encoding="utf-8") as f:
-        train_pubs = json.load(f)['data_train'][1]
-    with open(join(os.path.dirname(__file__), "data_valid.json"), "r", encoding="utf-8") as f:
-        valid_pubs = json.load(f)['data_train'][1]
-    with open(join(os.path.dirname(__file__), "data_test.json"), "r", encoding="utf-8") as f:
-        test_pubs = json.load(f)['data_train'][1]
+    train_pubs = join(os.path.dirname(__file__), "data_train.json")
+    valid_pubs = join(os.path.dirname(__file__), "data_valid.json")
+    test_pubs = join(os.path.dirname(__file__), "data_test.json")
     pub_files = [train_pubs, valid_pubs, test_pubs]
     texts_dir = 'extract_text'
     if not os.path.exists(texts_dir):
@@ -120,7 +117,7 @@ def dump_paper_emb(model_name, ft_dim):
         for n, name in tqdm(enumerate(raw_pubs)):
             save_path = 'paper_emb'
             with open(join(os.path.dirname(__file__), "names_pub", mode, name + '.json'), "r", encoding="utf-8") as f:
-                name_pubs = json.load(f)['data_train'][0]
+                name_pubs = json.load(f)
             text_feature_path = join(f'{save_path}', mode, name)
             if not os.path.exists(text_feature_path):
                 os.makedirs(text_feature_path)
