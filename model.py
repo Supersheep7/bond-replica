@@ -15,6 +15,7 @@ import codecs
 import json
 from sklearn.metrics import f1_score
 import matplotlib.pyplot as plt
+import statistics
 
 def pairwise_f1(gt_labels, pred_labels, *, return_stats=False):
     """
@@ -23,8 +24,6 @@ def pairwise_f1(gt_labels, pred_labels, *, return_stats=False):
     Pred positive: same predicted cluster AND neither label is -1 (noise).
     Pairs with any noise are treated as predicted NEGATIVE.
     """
-    print(gt_labels)
-    print(pred_labels)
     gt = np.asarray(gt_labels)
     pr = np.asarray(pred_labels)
     assert gt.shape == pr.shape and gt.ndim == 1
@@ -82,13 +81,13 @@ def save_results(names, pubs, results, mode):
                 if i == j:
                     oneauthor.append(name_pubs[idx])
             output[name].append(oneauthor)
-    
+
     result_dir = 'out'
     if not os.path.exists(result_dir):
         os.makedirs(result_dir)
-    result_path = join(result_dir, f'res.json')   
+    result_path = join(result_dir, f'res.json')
     with codecs.open(result_path, 'w', encoding='utf-8') as wf:
-        json.dump(output, wf, ensure_ascii=False, indent=4)    
+        json.dump(output, wf, ensure_ascii=False, indent=4)
     return result_path
 
 def generate_pair(pubs, name, outlier, mode):
@@ -169,7 +168,7 @@ def generate_pair(pubs, name, outlier, mode):
                 ct = len(set(paper_word[pid]) & set(paper_word[pjd])) * 0.33
 
             paper_paper[i][j] = ca + cv + co + ct
-            
+
     return paper_paper
 
 seed = 0
@@ -180,10 +179,9 @@ torch.cuda.manual_seed(seed)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 class ATTGNN(nn.Module):
 
-    ''' 
+    '''
     The graph attention network (GAT) model. This is just the encoder part of the GAE!
     '''
 
@@ -197,7 +195,29 @@ class ATTGNN(nn.Module):
 
         nn.init.xavier_uniform_(self.clas_layer.data, gain=1.414)
         nn.init.xavier_uniform_(self.bias.data, gain=1.414)
-    
+
+    def early_stopping(self, current, best, wait, patience, epoch, best_state_dict=None, spike_ratio=1.3):
+        stop = False
+        if current < best:
+            best = current
+            wait = 0
+            best_state_dict = self.state_dict()
+        else:
+            if current > best * spike_ratio:
+                print(f"Spike detected at epoch {epoch}: {current:.4f} vs best {best:.4f}")
+                self.load_state_dict(best_state_dict)
+                stop = True
+            else:
+                # Standard patience logic
+                wait += 1
+                if wait >= patience:
+                    print(f"No improvement for {patience} epochs. Early stopping at epoch {epoch}.")
+                    self.load_state_dict(best_state_dict)
+                    stop = True
+
+        return best, wait, stop, best_state_dict
+
+
     def forward(self, ft_list, adj_tensor, edge_attr=None):
         ''' This part gives us the embeddings H'' '''
         x_list = self.conv1(ft_list, adj_tensor, edge_attr)
@@ -209,11 +229,11 @@ class ATTGNN(nn.Module):
 
         embd = x_list
         return logits, embd
-        
+
     def non_linear(self, x_list):
         y_list = F.elu(x_list)
         return y_list
-    
+
     def dropout_ft(self, x_list, dropout):
         y_list = F.dropout(x_list, dropout, training=self.training)
         return y_list
@@ -237,7 +257,7 @@ class BONDTrainer:
                 labels_arr = np.array(label_list.cpu().detach().numpy())
             except:
                 labels_arr = np.array(label_list)
-        
+
         num_classes = max(labels_arr) + 1
         onehot_mat = np.zeros((len(labels_arr), num_classes+1))
 
@@ -245,7 +265,7 @@ class BONDTrainer:
             onehot_mat[i, labels_arr[i]] = 1
 
         return onehot_mat
-    
+
     def matx2list(self, adj):
         """
         Transform matrix to list.
@@ -257,7 +277,7 @@ class BONDTrainer:
             else:
                 temp = i.cpu().detach().numpy()
             for idx, j in enumerate(temp):
-                if j == 1: 
+                if j == 1:
                     adj_preds.append(idx)
                     break
                 if idx == len(temp)-1:
@@ -274,7 +294,7 @@ class BONDTrainer:
             name(str): author name
             mode(str): train/valid/test
         Return:
-            pred(list): after post-match e.g. [0, 0, 0, 1] 
+            pred(list): after post-match e.g. [0, 0, 0, 1]
         """
         #1 outlier from dbscan labels
         outlier = set()
@@ -285,15 +305,15 @@ class BONDTrainer:
         #2 outlier from building graphs (relational)
         datapath = join('graph', mode, name)
         with open(join(datapath, 'rel_cp.txt'), 'r') as f:
-            rel_outlier = [int(x) for x in f.read().split('\n')[:-1]] 
+            rel_outlier = [int(x) for x in f.read().split('\n')[:-1]]
 
         for i in rel_outlier:
             outlier.add(i)
-        
+
         print(f"post matching {len(outlier)} outliers")
         paper_pair = generate_pair(pubs, name, outlier, mode)
         paper_pair1 = paper_pair.copy()
-        
+
         K = len(set(pred))
 
         for i in range(len(pred)):
@@ -325,23 +345,27 @@ class BONDTrainer:
     def fit(self, datatype):
         names, pubs = load_dataset(datatype)
         results = {}
-
+        total_f1s = []
         for name in names:
             print("training:", name)
             results[name] = []
 
             # ==== Load data ====
-            label, ft_list, data = load_graph(name)
+            try:
+                label, ft_list, data = load_graph(name, mode=datatype)
+            except Exception as e:   # catch any error
+                print(f"Skipping {name}, error: {e}")
+                continue
             num_cluster = int(ft_list.shape[0])
             layer_shape = []
             input_layer_shape = ft_list.shape[1]
             hidden_layer_shape = [256, 512]
             output_layer_shape = num_cluster #adjust output-layer size of FC layer.
-            
+
             layer_shape.append(input_layer_shape)
             layer_shape.extend(hidden_layer_shape)
             layer_shape.append(output_layer_shape)
-            
+
             # get the list of pid(paper-id)
             name_pubs = []
             if datatype == 'train':
@@ -357,12 +381,18 @@ class BONDTrainer:
             ft_list = ft_list.to(device)
             data = data.to(device)
             model.to(device)
-            
+
             optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=5e-4)
 
             cluster_losses, recon_losses, total_losses, f1s = [], [], [], []
 
-            for epoch in range(50):
+            best_cluster_loss = float("inf")
+            patience = 3  # stop if no improvement for 5 epochs
+            wait = 0
+            best_state_dict = None
+            epochs = 100
+
+            for epoch in range(epochs):
                 model.train()
                 optimizer.zero_grad()
                 logits, embd = model.encode(ft_list, data.edge_index, data.edge_attr)
@@ -377,9 +407,15 @@ class BONDTrainer:
                 global_label = torch.matmul(logits, logits.t())
 
                 # Losses
+                lamb = 0.6
                 loss_cluster = F.binary_cross_entropy_with_logits(global_label, local_label)
                 loss_recon = model.recon_loss(embd, data.edge_index)
-                loss_train = 0.5 * loss_cluster + 0.5 * loss_recon
+                loss_train = lamb * loss_cluster + (1-lamb) * loss_recon
+
+                # Early stopping
+                best_cluster_loss, wait, stop, best_state_dict = model.encoder.early_stopping(
+                    loss_cluster.item(), best_cluster_loss, wait, patience, epoch, best_state_dict
+                )
 
                 # === Log running losses ===
                 cluster_losses.append(loss_cluster.item())
@@ -390,19 +426,58 @@ class BONDTrainer:
                 gt_labels = label.cpu().numpy()
                 f1 = pairwise_f1(gt_labels, db_label)
                 f1s.append(f1)
-                
-                if epoch % 5 == 0:
+
+                if epoch % 5 == 0 or stop:
+
                     print(
                         f'epoch: {epoch:3d} | cluster loss: {loss_cluster.item():.4f} '
                         f'recon loss: {loss_recon.item():.4f} | total loss: {loss_train.item():.4f} '
                         f'| F1: {f1:.3f}'
                     )
 
+                    gt = np.array(gt_labels)
+                    db = np.array(db_label)
+                    gt_shifted = gt - gt.min()
+                    db_shifted = db - db.min()
+
+                    # Count frequencies
+                    gt_counts = np.bincount(gt_shifted)
+                    db_counts = np.bincount(db_shifted)
+
+                    # Pad to same length
+                    max_len = max(len(gt_counts), len(db_counts))
+                    gt_counts = np.pad(gt_counts, (0, max_len - len(gt_counts)))
+                    db_counts = np.pad(db_counts, (0, max_len - len(db_counts)))
+
+                    # Normalize to distributions
+                    gt_dist = gt_counts / gt_counts.sum()
+                    db_dist = db_counts / db_counts.sum()
+
+                    # Sort
+                    gt_sorted = np.sort(gt_dist)[::-1]
+                    db_sorted = np.sort(db_dist)[::-1]
+
+                    x = np.arange(max_len)
+
+                    plt.figure(figsize=(8,5))
+
+                    # Predictions: filled bars
+                    plt.bar(x, db_sorted, width=1, color="orange", alpha=0.6, label="Clusters")
+
+                    # Ground truth: hollow outline, drawn on top
+                    plt.bar(x, gt_sorted, width=1, fill=False, edgecolor="black", linewidth=2, label="Ground truth")
+
+                    plt.xlabel("Sorted bin index")
+                    plt.ylabel("Proportion")
+                    plt.title("Overlapping Sorted Distributions")
+                    plt.legend()
+                    plt.show()
+                if stop:
+                    print('Early stopping!')
+                    break
                 loss_train.backward()
                 optimizer.step()
 
-                
-                        
             # ==== Evaluate ====
             # ================= Plot after training =================
             plt.figure(figsize=(12,4))
@@ -421,10 +496,22 @@ class BONDTrainer:
             plt.xlabel("Epoch")
             plt.ylabel("F1-score")
             plt.legend()
-            plt.title(f"Clustering F1 vs GT - {name}")
-
+            plt.title(f"Clustering F1 vs GT - {name}; F1: {f1s[-1]:.3f}")
             plt.tight_layout()
             plt.show()
+
+            total_f1s.append(f1s[-1])
+            avg = statistics.mean(total_f1s)
+            stdev = statistics.stdev(total_f1s) if len(total_f1s) > 1 else 0
+
+            # Simple outlier detection (values more than 2 std devs from mean)
+            outliers = [x for x in total_f1s if abs(x - avg) > 2 * stdev]
+
+            print(f"Avg F1 so far: {avg:.3f}")
+            print(f"Std Dev: {stdev:.3f}")
+            print(f"Outliers: {outliers if outliers else 'None'}")
+            print("Stats")
+
             with torch.no_grad():
                 model.eval()
                 logits, embd = model.encode(ft_list, data.edge_index, data.edge_attr)
@@ -433,12 +520,12 @@ class BONDTrainer:
                 ''' Get the pairwise distances in embd space '''
                 lc_dis = pairwise_distances(embd.cpu().detach().numpy(), metric='cosine')
                 ''' Fit a DBSCAN on local distances (from embd)'''
-                local_label = DBSCAN(eps=0.5, min_samples=5, metric='precomputed').fit_predict(lc_dis) 
+                local_label = DBSCAN(eps=0.5, min_samples=5, metric='precomputed').fit_predict(lc_dis)
                 ''' Get the pairwise distances in logits space '''
                 gl_dis = pairwise_distances(global_label.cpu().detach().numpy(), metric='cosine')
                 ''' Fit a dbscan on global distances (from logits) '''
-                global_label = DBSCAN(eps=0.5, min_samples=5, metric='precomputed').fit_predict(gl_dis) 
-                pred = []           
+                global_label = DBSCAN(eps=0.5, min_samples=5, metric='precomputed').fit_predict(gl_dis)
+                pred = []
                 # change to one-hot form
                 class_matrix = torch.from_numpy(self.onehot_encoder(local_label))
                 # get N * N matrix

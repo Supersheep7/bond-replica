@@ -86,7 +86,7 @@ def save_label_pubs(mode, name, raw_pubs, save_path):
     """
     os.makedirs(save_path, exist_ok=True)
 
-    if mode == "train":
+    if mode == "train" or "valid":
         label_dict = {}
         pubs = []
         ilabel = 0
@@ -98,6 +98,7 @@ def save_label_pubs(mode, name, raw_pubs, save_path):
 
         file_path = join(save_path, "p_label.npy")
         np.save(file_path, label_dict)
+
     else:
         pubs = []
         for pid in raw_pubs[name]:
@@ -195,7 +196,8 @@ def save_graph(name, pubs, save_path, mode):
 
     out_f.close()
 
-def build_graph():
+def build_graph(eval=False):
+    print("Yo!")
     """
     Processes datasets for different modes ('train', 'valid', 'test') by loading corresponding JSON files,
     iterating through each publication, and generating graph-related data.
@@ -219,12 +221,25 @@ def build_graph():
             with open(join(os.path.dirname(__file__), "data_test.json"), "r", encoding="utf-8") as f:
                 raw_pubs = json.load(f)['data_test'][0]
         
-        for name in tqdm(raw_pubs):
-            save_path = join('graph', mode, name)
-            os.makedirs(save_path, exist_ok=True)
-            pubs = save_label_pubs(mode, name, raw_pubs, save_path)
-            save_graph(name, pubs, save_path, mode)
-            save_emb(mode, name, pubs, save_path)
+        if not eval:
+
+            for name in tqdm(raw_pubs):
+
+                save_path = join('graph', mode, name)
+                os.makedirs(save_path, exist_ok=True)
+                pubs = save_label_pubs(mode, name, raw_pubs, save_path)
+                save_graph(name, pubs, save_path, mode)
+                save_emb(mode, name, pubs, save_path)
+
+        else: 
+            with open(join(os.path.dirname(__file__), "data_eval.json"), "r", encoding="utf-8") as f:
+                raw_pubs = json.load(f)['data_valid'][0]
+            for name in tqdm(raw_pubs):
+                save_path = join('eval_graph', 'valid', name)
+                os.makedirs(save_path, exist_ok=True)
+                pubs = save_label_pubs('valid', name, raw_pubs, save_path)
+                save_graph(name, pubs, save_path, 'valid')
+                save_emb('valid', name, pubs, save_path)
 
 def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0.9):
     """
@@ -238,11 +253,12 @@ def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0
         ft_tensor(tensor): node feature
         data(Pyg Graph Data): graph
     """
-    data_path = 'graph'
+    data_path = 'graph' if mode != 'eval' else 'eval_graph'
     datapath = join(data_path, mode, name)
 
     # Load label
-    if mode == "train":
+    if mode == "train" or "valid":
+        print(data_path)
         p_label = np.load(join(datapath, 'p_label.npy'), allow_pickle=True)
         p_label_list = []
         for pid in p_label.item():
