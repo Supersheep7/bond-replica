@@ -353,6 +353,7 @@ class BONDTrainer:
             # ==== Load data ====
             try:
                 label, ft_list, data = load_graph(name, mode=datatype)
+                print("Successful", label)
             except Exception as e:   # catch any error
                 print(f"Skipping {name}, error: {e}")
                 continue
@@ -423,6 +424,7 @@ class BONDTrainer:
                 total_losses.append(loss_train.item())
 
                 # === Running F1 ===
+
                 gt_labels = label.cpu().numpy()
                 f1 = pairwise_f1(gt_labels, db_label)
                 f1s.append(f1)

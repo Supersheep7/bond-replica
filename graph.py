@@ -2,7 +2,7 @@ import os
 import re
 from tqdm import tqdm
 from os.path import join
-import json 
+import json
 import numpy as np
 import torch
 import pickle
@@ -20,7 +20,7 @@ def save_emb(mode, name, pubs, save_path):
         ptext_emb = pickle.load(f)
 
     # init node feature matrix(n * dim_size)
-    ft = dict() 
+    ft = dict()
     for pidx_1 in mapping:
         pid_1 = mapping[pidx_1]
         ft[pidx_1] = torch.from_numpy(ptext_emb[pid_1])
@@ -39,8 +39,8 @@ def gen_relations(name, mode, target):
         FileNotFoundError: If the corresponding relation file does not exist.
         ValueError: If the target is not one of the supported types.
     IMPORTANT:
-        The function expects the existence of files named 'paper_author.txt', 'paper_org.txt', 
-        or 'paper_venue.txt'in the directory specified by 'dirpath'. 
+        The function expects the existence of files named 'paper_author.txt', 'paper_org.txt',
+        or 'paper_venue.txt'in the directory specified by 'dirpath'.
         Each file should contain tab-separated pairs of paper and entity IDs.
     """
 
@@ -63,7 +63,7 @@ def gen_relations(name, mode, target):
     for line in temp:
         toks = line.strip().split("\t")
         if len(toks) == 2:
-            p, a = toks[0], toks[1]     
+            p, a = toks[0], toks[1]
             if p not in paper_info:
                 paper_info[p] = []
             paper_info[p].append(a)
@@ -141,14 +141,14 @@ def save_graph(name, pubs, save_path, mode):
             cp_o.add(paper_dict[pid])
 
     # mark paper w/o coauthor and coorg as outlier
-    cp = cp_a & cp_o 
+    cp = cp_a & cp_o
 
-    with open(join(save_path, 'adj_attr.txt'), 'w') as f:  
-        
+    with open(join(save_path, 'adj_attr.txt'), 'w') as f:
+
         for p1 in paper_dict:
             p1_idx = paper_dict[p1]
             for p2 in paper_dict:
-                p2_idx = paper_dict[p2] 
+                p2_idx = paper_dict[p2]
                 if p1 != p2:
                     co_aths, co_orgs, co_vens = 0, 0 ,0
                     org_attr, org_attr_jaccard, org_jaccard2, ven_attr, ven_attr_jaccard, venue_jaccard2 = 0, 0, 0, 0, 0, 0
@@ -159,7 +159,7 @@ def save_graph(name, pubs, save_path, mode):
                             if p2 in paper_rel_ath:
                                 if k in paper_rel_ath[p2]:
                                     co_aths += 1
-                    
+
                     if p1 in paper_rel_org:
                         for k in paper_rel_org[p1]:
                             if p2 in paper_rel_org:
@@ -185,11 +185,11 @@ def save_graph(name, pubs, save_path, mode):
                     if (co_aths + co_orgs) > 0:
                         f.write(f'{p1_idx}\t{p2_idx}\t{co_aths}\t'
                                 f'{co_orgs}\t{org_attr_jaccard}\t'
-                                f'{co_vens}\t{ven_attr_jaccard}\n')              
-    
+                                f'{co_vens}\t{ven_attr_jaccard}\n')
+
 
     f.close()
-                
+
     with open(join(save_path, 'rel_cp.txt'), 'w') as out_f:
         for i in cp:
             out_f.write(f'{i}\n')
@@ -208,7 +208,7 @@ def build_graph(eval=False):
         - Calls functions to save labeled publications, graph structures, and embeddings for each publication.
         - Creates directories and writes files to disk under the 'graph' directory for each mode and publication.
     """
-    
+
     for mode in ["train", "valid", "test"]:
         print("preprocess dataset: ", mode)
         if mode == "train":
@@ -220,7 +220,7 @@ def build_graph(eval=False):
         elif mode == "test":
             with open(join(os.path.dirname(__file__), "data_test.json"), "r", encoding="utf-8") as f:
                 raw_pubs = json.load(f)['data_test'][0]
-        
+
         if not eval:
 
             for name in tqdm(raw_pubs):
@@ -231,7 +231,7 @@ def build_graph(eval=False):
                 save_graph(name, pubs, save_path, mode)
                 save_emb(mode, name, pubs, save_path)
 
-        else: 
+        else:
             with open(join(os.path.dirname(__file__), "data_eval.json"), "r", encoding="utf-8") as f:
                 raw_pubs = json.load(f)['data_valid'][0]
             for name in tqdm(raw_pubs):
@@ -253,12 +253,12 @@ def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0
         ft_tensor(tensor): node feature
         data(Pyg Graph Data): graph
     """
-    data_path = 'graph' if mode != 'eval' else 'eval_graph'
+    data_path = 'graph' if mode is not 'valid' else 'eval_graph'
     datapath = join(data_path, mode, name)
 
     # Load label
     if mode == "train" or "valid":
-        print(data_path)
+        print("Yeah")
         p_label = np.load(join(datapath, 'p_label.npy'), allow_pickle=True)
         p_label_list = []
         for pid in p_label.item():
@@ -267,7 +267,7 @@ def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0
 
     else:
         label = []
-    
+
     # Load node feature
     feats = np.load(join(datapath, 'feats_p.npy'), allow_pickle=True)
     ft_list = []
@@ -308,14 +308,14 @@ def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0
                 srcs.append(src)
                 dsts.append(dst)
                 value.append(val_v)
-                attr.append(val_v)  
+                attr.append(val_v)
         elif rel_on == 'aov':
             prob_v = random.random()
             if (prob_v >= p_v):
                 val_v = val_v
             else:
                 val_v = 0
-            
+
             if attr_o >= th_o:
                 val_o = val_o
             else:
@@ -335,7 +335,7 @@ def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0
                 srcs.append(src)
                 dsts.append(dst)
                 value.append(val_a+val_v)
-                attr.append([float(val_a), 0, float(attr_v)])   
+                attr.append([float(val_a), 0, float(attr_v)])
             elif (val_a > th_a) and (val_o <= th_o) and (val_v <= th_v): #a
                 srcs.append(src)
                 dsts.append(dst)
@@ -356,7 +356,7 @@ def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0
                 dsts.append(dst)
                 value.append(val_v)
                 attr.append([0, 0, float(attr_v)])
-        
+
         else:
             print('wrong relation set\n')
             break
