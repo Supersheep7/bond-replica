@@ -353,7 +353,7 @@ class BONDTrainer:
             # ==== Load data ====
             try:
                 label, ft_list, data = load_graph(name, mode=datatype)
-                print("Successful", label)
+                print("Successful")
             except Exception as e:   # catch any error
                 print(f"Skipping {name}, error: {e}")
                 continue
@@ -533,7 +533,7 @@ class BONDTrainer:
                 # get N * N matrix
                 local_label = torch.mm(class_matrix, class_matrix.t())
                 pred = self.matx2list(local_label)
-                pred = self.post_match(pred, name_pubs, name, datatype)
+                # pred = self.post_match(pred, name_pubs, name, datatype)
                 # Save results
                 results[name] = pred
 
