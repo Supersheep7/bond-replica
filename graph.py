@@ -8,6 +8,7 @@ import torch
 import pickle
 import random
 from torch_geometric.data import Data
+import string
 
 def save_emb(mode, name, pubs, save_path):
     # build mapping of paper & index-id
@@ -86,16 +87,15 @@ def save_label_pubs(mode, name, raw_pubs, save_path):
     """
     os.makedirs(save_path, exist_ok=True)
 
-    if mode == "train" or "valid":
+    if mode in ["train", "valid"]:
         label_dict = {}
         pubs = []
         ilabel = 0
         for aid in raw_pubs[name]:
-            pubs.extend(raw_pubs[name][aid])
+            pubs.extend(raw_pubs[name][aid])  
             for pid in raw_pubs[name][aid]:
                 label_dict[pid] = ilabel
             ilabel += 1
-
         file_path = join(save_path, "p_label.npy")
         np.save(file_path, label_dict)
 
@@ -196,8 +196,7 @@ def save_graph(name, pubs, save_path, mode):
 
     out_f.close()
 
-def build_graph(eval=False):
-    print("Yo!")
+def build_graph():
     """
     Processes datasets for different modes ('train', 'valid', 'test') by loading corresponding JSON files,
     iterating through each publication, and generating graph-related data.
@@ -210,36 +209,18 @@ def build_graph(eval=False):
     """
 
     for mode in ["train", "valid", "test"]:
+        
         print("preprocess dataset: ", mode)
-        if mode == "train":
-            with open(join(os.path.dirname(__file__), "data_train.json"), "r", encoding="utf-8") as f:
-                raw_pubs = json.load(f)['data_train'][0]
-        elif mode == "valid":
-            with open(join(os.path.dirname(__file__), "data_valid.json"), "r", encoding="utf-8") as f:
-                raw_pubs = json.load(f)['data_valid'][0]
-        elif mode == "test":
-            with open(join(os.path.dirname(__file__), "data_test.json"), "r", encoding="utf-8") as f:
-                raw_pubs = json.load(f)['data_test'][0]
+        with open(join(os.path.dirname(__file__), f"data_{mode}.json"), "r", encoding="utf-8") as f:
+                raw_pubs = json.load(f)[f'data_{mode}'][0]
 
-        if not eval:
+        for name in tqdm(raw_pubs):
 
-            for name in tqdm(raw_pubs):
-
-                save_path = join('graph', mode, name)
-                os.makedirs(save_path, exist_ok=True)
-                pubs = save_label_pubs(mode, name, raw_pubs, save_path)
-                save_graph(name, pubs, save_path, mode)
-                save_emb(mode, name, pubs, save_path)
-
-        else:
-            with open(join(os.path.dirname(__file__), "data_eval.json"), "r", encoding="utf-8") as f:
-                raw_pubs = json.load(f)['data_valid'][0]
-            for name in tqdm(raw_pubs):
-                save_path = join('eval_graph', 'valid', name)
-                os.makedirs(save_path, exist_ok=True)
-                pubs = save_label_pubs('valid', name, raw_pubs, save_path)
-                save_graph(name, pubs, save_path, 'valid')
-                save_emb('valid', name, pubs, save_path)
+            save_path = join('graph', mode, name)
+            os.makedirs(save_path, exist_ok=True)
+            pubs = save_label_pubs(mode, name, raw_pubs, save_path)
+            save_graph(name, pubs, save_path, mode)
+            save_emb(mode, name, pubs, save_path)
 
 def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0.9):
     """
@@ -253,12 +234,11 @@ def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0
         ft_tensor(tensor): node feature
         data(Pyg Graph Data): graph
     """
-    data_path = 'graph' if mode is not 'valid' else 'eval_graph'
+    data_path = 'graph' 
     datapath = join(data_path, mode, name)
 
     # Load label
     if mode == "train" or "valid":
-        print("Yeah")
         p_label = np.load(join(datapath, 'p_label.npy'), allow_pickle=True)
         p_label_list = []
         for pid in p_label.item():
