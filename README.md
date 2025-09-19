@@ -1,1 +1,3 @@
 This repository is a WIP replication experiment for results from Cheng, Y., Chen, B., Zhang, F., & Tang, J. (2024). BOND: Bootstrapping From-Scratch Name Disambiguation with Multi-task Promoting. Proceedings of the ACM Web Conference 2024, 4216–4226. https://doi.org/10.1145/3589334.3645580 >> https://github.com/THUDM/WhoIsWho/tree/main/bond
+
+WIP >> you can go on [this colab](https://colab.research.google.com/drive/1SOlBtWgPfJlykmWa_70p7BO7kc6VU3VW#scrollTo=t3_BKE3Jy6ET) to test the model on the favoured data. To mount that on your drive you'll have to run the first cell once, then you will have the folder on My Drive

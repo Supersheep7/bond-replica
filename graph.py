@@ -238,7 +238,7 @@ def load_graph(name, mode='train', rel_on='aov', th_a=0, th_o=0.5, th_v=2, p_v=0
     datapath = join(data_path, mode, name)
 
     # Load label
-    if mode == "train" or "valid":
+    if mode in ["train", "valid"]:
         p_label = np.load(join(datapath, 'p_label.npy'), allow_pickle=True)
         p_label_list = []
         for pid in p_label.item():
